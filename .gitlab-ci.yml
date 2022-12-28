@@ -1,0 +1,61 @@
+variables:
+  GITLAB_TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${CI_PROJECT_NAME}
+  TF_ROOT: ${CI_PROJECT_DIR}
+
+cache:
+  paths:
+    - .terraform
+
+before_script:
+  - cd ${TF_ROOT}
+  - terraform --version
+  - terraform init -var="vsphere_password=${VCSA_PWD}" -reconfigure -backend-config="address=${GITLAB_TF_ADDRESS}" -backend-config="lock_address=${GITLAB_TF_ADDRESS}/lock" -backend-config="unlock_address=${GITLAB_TF_ADDRESS}/lock" -backend-config="username=gitlab-ci-token" -backend-config="password=${CI_JOB_TOKEN}" -backend-config="lock_method=POST" -backend-config="unlock_method=DELETE"
+stages:
+  - validate
+  - plan
+  - deploy
+  - destroy
+
+validate:
+  stage: validate
+  tags:
+    - terraform
+  script:
+    - terraform validate
+    #- terraform state rm module.test.vsphere_virtual_machine.Linux[0]    ### для тестов удаления соответствия 
+    #- terraform import module.test.vsphere_virtual_machine.Linux[0] "/main/vm/Edu/testvm123" ### восстановление утерянного соответствия с ВМ
+
+plan:
+  stage: plan
+  tags:
+    - terraform
+  dependencies:
+    - validate
+  script:
+    - terraform plan -var="vsphere_password=${VCSA_PWD}"
+
+deploy:
+  stage: deploy
+  tags:
+    - terraform
+  dependencies:
+    - validate
+    - plan
+  script:
+    - terraform apply -input=false -auto-approve -var="vsphere_password=${VCSA_PWD}"
+  when: manual
+  only:
+    - master
+
+destroy:
+ stage: destroy
+ tags:
+   - terraform
+ dependencies:
+   - validate
+   - plan
+ when: manual
+ script:
+   - terraform destroy -input=false -auto-approve -var="vsphere_password=${VCSA_PWD}"
+ only:
+   - master
